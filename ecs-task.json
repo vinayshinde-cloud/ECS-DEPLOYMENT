@@ -1,0 +1,58 @@
+{
+    "containerDefinitions": [
+        {
+            "name": "cloudage-container",
+            "image": "992167236365.dkr.ecr.us-east-1.amazonaws.com/cloudage-app:latest",
+            "cpu": 0,
+            "portMappings": [
+                {
+                    "containerPort": 80,
+                    "hostPort": 80,
+                    "protocol": "tcp"
+                }
+            ],
+            "essential": true,
+            "environment": [
+                {
+                    "name": "ASSIGNMENTS_TABLE",
+                    "value": "assignments"
+                },
+                {
+                    "name": "AWS_REGION",
+                    "value": "us-east-1"
+                },
+                {
+                    "name": "BEDROCK_MODEL_ID",
+                    "value": "amazon.nova-canvas-v1:0"
+                },
+                {
+                    "name": "S3_BUCKET",
+                    "value": "mcq-project"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/cloudage-task",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "ecs"
+                }
+            }
+        }
+    ],
+    "family": "cloudage-task",
+    "taskRoleArn": "arn:aws:iam::992167236365:role/ecsTaskRole",
+    "executionRoleArn": "arn:aws:iam::992167236365:role/ecsTaskExecutionRole",
+    "networkMode": "awsvpc",
+    "volumes": [],
+    "placementConstraints": [],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "runtimePlatform": {
+        "cpuArchitecture": "X86_64",
+        "operatingSystemFamily": "LINUX"
+    }
+}

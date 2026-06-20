@@ -1,0 +1,13 @@
+.git
+.gitignore
+README.md
+Dockerfile
+.dockerignore
+node_modules
+npm-debug.log
+.env
+*.log
+.github
+aws/
+build-and-push.sh
+Build and Test Locally.md

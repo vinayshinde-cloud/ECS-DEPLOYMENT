@@ -1,0 +1,110 @@
+name: Deploy CloudAge App to ECS
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: cloudage-app
+  ECS_SERVICE: cloudage-service
+  ECS_CLUSTER: cloudage-cluster
+  ECS_TASK_DEFINITION: aws/task-definition.json
+  CONTAINER_NAME: cloudage-container
+
+jobs:
+  # Build and test job
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker image for testing
+      run: |
+        docker build -t test-image .
+
+    - name: Test Docker container
+      run: |
+        # Start container
+        docker run -d -p 8080:80 --name test-container test-image
+        
+        # Wait for container to be ready
+        sleep 10
+        
+        # Test if the app is responding
+        curl -f http://localhost:8080 || exit 1
+        
+        # Stop test container
+        docker stop test-container
+        docker rm test-container
+        
+        echo "✅ Container test passed!"
+
+  # Deploy job (only on main/master branch)
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Build, tag, and push image to Amazon ECR
+      id: build-image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        echo "🏗️ Building Docker image..."
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        echo "📤 Pushing image to ECR..."
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+        
+        echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+
+    - name: Fill in the new image ID in the Amazon ECS task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: ${{ env.ECS_TASK_DEFINITION }}
+        container-name: ${{ env.CONTAINER_NAME }}
+        image: ${{ steps.build-image.outputs.image }}
+
+    - name: Deploy Amazon ECS task definition
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
+
+    - name: Get service URL
+      run: |
+        # Get the load balancer DNS name
+        ALB_DNS=$(aws elbv2 describe-load-balancers \
+          --names cloudage-alb \
+          --query 'LoadBalancers[0].DNSName' \
+          --output text \
+          --region ${{ env.AWS_REGION }})
+        
+        echo "🎉 Deployment successful!"
+        echo "🌐 Your app is available at: http://$ALB_DNS"
